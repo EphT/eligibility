@@ -79,6 +79,39 @@ function eligibility_user_delete($account) {
 }
 
 /**
+ * Implements hook_form_alter().
+ */
+function eligibility_form_alter(&$form, &$form_state, $form_id) {
+  if ( !isset($remove[$form_id]) ) {
+    $targets = eligibility_form_targets($form, $form_state, $form_id);
+    if ( isset($targets[$form_id]) ) {
+      $eligibility = eligibility_get( $targets[$form_id]['variables'] );
+      if ($eligibility->status != ELIGIBILITY_IS_ELIGIBLE) {
+        // remove this form after build if specified
+        $form['#disabled'] = TRUE;
+        $form['message'] = array(
+          '#markup' => $targets[$form_id]['message'],
+        );
+      }
+      else {
+        $form['eligibility'] = array(
+          '#type' => 'value',
+          '#value' => $eligibility,
+        );
+        array_unshift( $form['#submit'], "eligibility_event_save_form_submit" );
+      }
+    }
+  }
+}
+
+/**
+ *
+ */
+function eligibility_event_save_form_submit($form, &$form_state) {
+  eligibility_event_save($form_state['values']['eligibility']->uid, $form_state['values']['eligibility']->tid);
+}
+
+/**
  * Determine whether the user has a given privilege.
  *
  * @param $string
@@ -335,6 +368,7 @@ function eligibility_get($params = array()) {
       $function = 'eligibility_restriction_' . $restriction->type;
       if ( $status == ELIGIBILITY_IS_ELIGIBLE && function_exists($function) ) {
         $eligibility = $function($restriction, $params['timestamp'], $params['last_timestamp']);
+        $eligibility->uid = $params['uid'];
         $eligibility->tid = $restriction->tid;
         $eligibility->term = $restriction->term;
         $status = $eligibility->status;
@@ -344,6 +378,7 @@ function eligibility_get($params = array()) {
   else {
     $eligibility = (object) array(
       'status' => ELIGIBILITY_IS_ELIGIBLE,
+      'uid' => $params['uid'],
       'tid' => $params['tid'],
       'timestamp' => $params['timestamp'],
       'last_timestamp' => $params['last_timestamp'],
@@ -610,4 +645,15 @@ function eligibility_config($variable = NULL) {
   }
 
   return $config;
+}
+
+/**
+ * Returns form targets.
+ */
+function eligibility_form_targets($form, $form_state, $form_id) {
+  $targets = &drupal_static(__FUNCTION__);
+  if ( !isset($targets) ) {
+    $targets = module_invoke_all('eligibility_form_target', $form, $form_state, $form_id);
+  }
+  return $targets;
 }
